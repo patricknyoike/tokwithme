@@ -1,98 +1,224 @@
-<?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+const WebSocket = require('ws');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
-$port = getenv('PORT') ?: 10000;
-$host = '0.0.0.0';
+const port = process.env.PORT || 8080;
 
-$server = stream_socket_server("tcp://$host:$port", $errno, $errstr);
-if (!$server) {
-    die("Error: $errstr\n");
-}
-
-echo "✅ Server running on http://$host:$port\n";
-
-$clients = [];
-
-while (true) {
-    $read = [$server];
-    foreach ($clients as $client) {
-        if (is_resource($client)) $read[] = $client;
+// Create HTTP server
+const server = http.createServer((req, res) => {
+    // Only serve index.html for root path
+    if (req.url === '/' || req.url === '/index.html') {
+        fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
+            if (err) {
+                res.writeHead(500);
+                res.end('Error loading index.html');
+            } else {
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end(data);
+            }
+        });
+    } else {
+        res.writeHead(404);
+        res.end('Not found');
     }
+});
+
+// Attach WebSocket server to the same HTTP server
+const wss = new WebSocket.Server({ server });
+
+// Your WebSocket logic
+let users = new Map();
+let waitingUsers = [];
+
+wss.on('connection', (ws, req) => {
+    console.log(`New WebSocket connection from ${req.socket.remoteAddress}`);
+    let userId = null;
+    let userName = null;
+    let currentPartner = null;
     
-    if (stream_select($read, $write, $except, 0, 50000) > 0) {
-        if (in_array($server, $read)) {
-            $client = stream_socket_accept($server);
-            if ($client) {
-                // Read the request
-                $request = fread($client, 4096);
-                
-                // Check if it's a WebSocket upgrade request
-                if (preg_match('/Sec-WebSocket-Key: (.*?)\r\n/', $request, $match)) {
-                    // WebSocket handshake
-                    $key = $match[1];
-                    $accept = base64_encode(sha1($key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
-                    $upgrade = "HTTP/1.1 101 Switching Protocols\r\n" .
-                               "Upgrade: websocket\r\n" .
-                               "Connection: Upgrade\r\n" .
-                               "Sec-WebSocket-Accept: $accept\r\n\r\n";
-                    fwrite($client, $upgrade);
-                    $clients[] = $client;
-                    echo "WebSocket client connected\n";
-                } else {
-                    // HTTP request - serve the HTML file
-                    $htmlFile = __DIR__ . '/index.html';
-                    if (file_exists($htmlFile)) {
-                        $html = file_get_contents($htmlFile);
-                        $response = "HTTP/1.1 200 OK\r\n" .
-                                   "Content-Type: text/html\r\n" .
-                                   "Content-Length: " . strlen($html) . "\r\n" .
-                                   "Connection: close\r\n\r\n" .
-                                   $html;
-                        fwrite($client, $response);
-                        echo "Served index.html to browser\n";
+    ws.on('message', (data) => {
+        try {
+            const msg = JSON.parse(data);
+            console.log(`Received: ${msg.type} from ${userId || 'unknown'}`);
+            
+            switch(msg.type) {
+                case 'register':
+                    userId = msg.userId;
+                    userName = msg.name;
+                    users.set(userId, { ws, name: userName, online: true });
+                    broadcastUserList();
+                    console.log(`✅ User registered: ${userName} (${userId})`);
+                    break;
+                    
+                case 'find_partner':
+                    userId = msg.userId;
+                    userName = users.get(userId)?.name || 'Unknown';
+                    if (waitingUsers.length > 0) {
+                        const partnerId = waitingUsers.shift();
+                        const partner = users.get(partnerId);
+                        
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            currentPartner = partnerId;
+                            users.get(userId).partner = partnerId;
+                            users.get(partnerId).partner = userId;
+                            
+                            ws.send(JSON.stringify({
+                                type: 'pair',
+                                partnerId: partnerId,
+                                partnerName: partner.name
+                            }));
+                            
+                            partner.ws.send(JSON.stringify({
+                                type: 'pair',
+                                partnerId: userId,
+                                partnerName: userName
+                            }));
+                            
+                            console.log(`🎉 Paired ${userName} with ${partner.name}`);
+                        }
                     } else {
-                        // If index.html doesn't exist, create a simple version
-                        $simpleHtml = '<!DOCTYPE html>
-                        <html>
-                        <head><title>TokWithMe</title><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-                        <body style="background:#0F0F0F;color:white;font-family:sans-serif;text-align:center;padding:50px;">
-                            <h1>TokWithMe</h1>
-                            <p>Real-time chat is loading...</p>
-                            <button onclick="connect()" style="background:#FE2C55;border:none;padding:15px 30px;border-radius:50px;color:white;margin-top:20px;">Connect</button>
-                            <script>
-                                function connect() {
-                                    const ws = new WebSocket("wss://' . $_SERVER["HTTP_HOST"] . '");
-                                    ws.onopen = () => alert("Connected!");
-                                    ws.onerror = () => alert("Connection error");
-                                }
-                            </script>
-                        </body>
-                        </html>';
-                        $response = "HTTP/1.1 200 OK\r\n" .
-                                   "Content-Type: text/html\r\n" .
-                                   "Content-Length: " . strlen($simpleHtml) . "\r\n" .
-                                   "Connection: close\r\n\r\n" .
-                                   $simpleHtml;
-                        fwrite($client, $response);
-                        echo "Served emergency HTML\n";
+                        waitingUsers.push(userId);
+                        ws.send(JSON.stringify({ type: 'waiting' }));
+                        console.log(`⏳ ${userName} is waiting for a partner`);
                     }
-                    fclose($client);
+                    break;
+                    
+                case 'initiate_chat':
+                    userId = msg.fromId;
+                    userName = msg.fromName;
+                    const target = users.get(msg.toId);
+                    if (target && target.ws.readyState === WebSocket.OPEN && !target.partner) {
+                        currentPartner = msg.toId;
+                        target.partner = userId;
+                        users.get(userId).partner = msg.toId;
+                        
+                        ws.send(JSON.stringify({
+                            type: 'pair',
+                            partnerId: msg.toId,
+                            partnerName: msg.toName
+                        }));
+                        
+                        target.ws.send(JSON.stringify({
+                            type: 'pair',
+                            partnerId: userId,
+                            partnerName: msg.fromName
+                        }));
+                        
+                        console.log(`💬 ${userName} initiated chat with ${msg.toName}`);
+                    } else {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'User is not available'
+                        }));
+                    }
+                    break;
+                    
+                case 'message':
+                    if (currentPartner) {
+                        const partner = users.get(currentPartner);
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            partner.ws.send(JSON.stringify({
+                                type: 'message',
+                                from: userId,
+                                messageId: msg.messageId,
+                                message: msg.message,
+                                timestamp: msg.timestamp
+                            }));
+                            console.log(`💬 Message from ${userName} to partner`);
+                        }
+                    }
+                    break;
+                    
+                case 'typing':
+                    if (currentPartner) {
+                        const partner = users.get(currentPartner);
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            partner.ws.send(JSON.stringify({
+                                type: 'typing',
+                                from: userId,
+                                isTyping: msg.isTyping
+                            }));
+                        }
+                    }
+                    break;
+                    
+                case 'disconnect':
+                    if (currentPartner) {
+                        const partner = users.get(currentPartner);
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            partner.ws.send(JSON.stringify({
+                                type: 'partner_disconnected',
+                                partnerId: userId
+                            }));
+                            partner.partner = null;
+                        }
+                        currentPartner = null;
+                    }
+                    break;
+                    
+                case 'get_users':
+                    broadcastUserList();
+                    break;
+            }
+        } catch(e) {
+            console.error('Error processing message:', e);
+        }
+    });
+    
+    ws.on('close', () => {
+        if (userId) {
+            const index = waitingUsers.indexOf(userId);
+            if (index !== -1) waitingUsers.splice(index, 1);
+            
+            if (currentPartner) {
+                const partner = users.get(currentPartner);
+                if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                    partner.ws.send(JSON.stringify({
+                        type: 'partner_disconnected',
+                        partnerId: userId
+                    }));
+                    partner.partner = null;
                 }
             }
-            unset($read[array_search($server, $read)]);
+            
+            users.delete(userId);
+            broadcastUserList();
+            console.log(`❌ User ${userName} disconnected`);
         }
-        
-        // Handle WebSocket messages
-        foreach ($read as $client) {
-            $data = fread($client, 1024);
-            if ($data === '' || $data === false) {
-                $index = array_search($client, $clients);
-                if ($index !== false) unset($clients[$index]);
-                fclose($client);
-                echo "WebSocket client disconnected\n";
-            }
+    });
+    
+    ws.on('error', (error) => {
+        console.error(`WebSocket error: ${error}`);
+    });
+});
+
+function broadcastUserList() {
+    const userList = Array.from(users.entries()).map(([id, user]) => ({
+        id: id,
+        name: user.name
+    }));
+    
+    console.log(`📡 Broadcasting ${userList.length} online users`);
+    
+    users.forEach((user) => {
+        if (user.ws && user.ws.readyState === WebSocket.OPEN) {
+            user.ws.send(JSON.stringify({
+                type: 'user_list',
+                users: userList
+            }));
         }
-    }
+    });
 }
-?>
+
+// Start the server
+server.listen(port, () => {
+    console.log(`🚀 TokWithMe Server running on port ${port}`);
+    console.log(`📱 WebSocket server: ws://localhost:${port}`);
+    console.log(`🌐 HTTP server: http://localhost:${port}`);
+});
+
+// Handle server errors
+server.on('error', (error) => {
+    console.error(`Server error: ${error}`);
+});
