@@ -7,12 +7,8 @@ ini_set('log_errors', 1);
 // Log startup
 error_log("TokWithMe Server Starting...");
 
-// Get port from Render environment (VERY IMPORTANT!)
-$port = getenv('PORT');
-if (!$port) {
-    $port = 8080; // Fallback port
-}
-
+// Use port 5008 as requested
+$port = 5008;
 $host = '0.0.0.0';
 
 error_log("Attempting to bind to $host:$port");
