@@ -21,9 +21,8 @@ COPY . /app/
 # Make sure server.php is executable
 RUN chmod +x server.php
 
-# Expose the port Render expects
-EXPOSE 8080
-EXPOSE 10000
+# Expose port 5008
+EXPOSE 5008
 
 # Run the WebSocket server with proper error logging
 CMD ["php", "-d", "display_errors=stderr", "server.php"]
