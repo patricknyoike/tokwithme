@@ -4,31 +4,26 @@ FROM php:8.2-cli
 RUN apt-get update && apt-get install -y \
     git \
     curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
     zip \
     unzip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
-RUN docker-php-ext-install mbstring exif pcntl bcmath
-
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Install PHP extensions for WebSocket and process control
+RUN docker-php-ext-install pcntl sockets
 
 # Set working directory
 WORKDIR /app
 
-# Copy application files
-COPY . /app
+# Copy all files
+COPY . /app/
 
-# Install PHP dependencies
-RUN composer install --no-interaction --optimize-autoloader --no-dev || true
+# Make sure server.php is executable
+RUN chmod +x server.php
 
-# Expose WebSocket port
+# Expose the port Render expects
 EXPOSE 8080
+EXPOSE 10000
 
-# Run the WebSocket server
-CMD ["php", "server.php"]
+# Run the WebSocket server with proper error logging
+CMD ["php", "-d", "display_errors=stderr", "server.php"]
