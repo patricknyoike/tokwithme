@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
-const server = new WebSocket.Server({ port: process.env.PORT || 8080 });
-
+// Use port 5008 for WebSocket connections
+const WS_URL = `wss://${window.location.hostname}:5008`;
 let users = new Map(); // In-memory only - no data saved!
 let waitingUsers = [];
 
