@@ -1,5 +1,11 @@
 {
     "name": "tokwithme/chat",
+    "description": "Real-time random chat with WebSockets",
     "type": "project",
-    "require": {}
+    "require": {
+        "cboden/ratchet": "^0.4.4"
+    },
+    "scripts": {
+        "start": "php server.php"
+    }
 }
