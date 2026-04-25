@@ -10,30 +10,11 @@
             background: #0F0F0F;
             color: white;
             height: 100vh;
-        }
-        .container { height: 100vh; display: flex; flex-direction: column; }
-        .header {
-            background: rgba(0,0,0,0.9);
-            padding: 15px;
             display: flex;
-            justify-content: space-between;
-            border-bottom: 1px solid #333;
+            align-items: center;
+            justify-content: center;
         }
-        .online-dot {
-            width: 10px;
-            height: 10px;
-            background: #4ade80;
-            border-radius: 50%;
-            display: inline-block;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 20px; }
-        .random-screen { align-items: center; justify-content: center; text-align: center; }
+        .container { text-align: center; padding: 20px; }
         .logo {
             width: 100px; height: 100px;
             background: linear-gradient(135deg, #FE2C55, #25F4EE);
@@ -41,337 +22,101 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 20px;
+            margin: 0 auto 30px;
         }
-        .logo i { font-size: 40px; }
+        .logo i { font-size: 50px; }
         button {
             background: linear-gradient(135deg, #FE2C55, #ff6b6b);
             border: none;
-            padding: 15px 30px;
+            padding: 15px 40px;
             border-radius: 50px;
             color: white;
             font-size: 16px;
             font-weight: bold;
-            margin-top: 20px;
             cursor: pointer;
-        }
-        .chat-screen, .users-screen { display: none; }
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-        }
-        .message {
-            max-width: 70%;
-            padding: 10px 15px;
-            border-radius: 20px;
-            margin-bottom: 10px;
-        }
-        .message.sent {
-            background: #FE2C55;
-            align-self: flex-end;
-        }
-        .message.received {
-            background: #333;
-            align-self: flex-start;
-        }
-        .input-area {
-            padding: 15px;
-            background: #1a1a1a;
-            border-top: 1px solid #333;
-        }
-        .input-wrapper {
-            display: flex;
-            gap: 10px;
+            margin-top: 30px;
         }
         input {
-            flex: 1;
-            background: #333;
-            border: none;
-            padding: 12px;
-            border-radius: 25px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 50px;
             color: white;
             font-size: 16px;
-            outline: none;
-        }
-        .users-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-            gap: 15px;
-            overflow-y: auto;
-        }
-        .user-card {
-            background: #1a1a1a;
-            border-radius: 12px;
-            padding: 15px;
+            width: 250px;
             text-align: center;
-            cursor: pointer;
-            transition: transform 0.2s;
         }
-        .user-card:active { transform: scale(0.95); }
-        .bottom-nav {
-            display: flex;
-            background: #1a1a1a;
-            border-top: 1px solid #333;
-        }
-        .nav-item {
-            flex: 1;
-            text-align: center;
-            padding: 15px;
-            cursor: pointer;
-        }
-        .nav-item.active { color: #FE2C55; }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #333;
-            border-top-color: #FE2C55;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.95);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-        .modal-content {
-            background: #1a1a1a;
-            border-radius: 20px;
-            padding: 30px;
-            text-align: center;
+        .status {
+            margin-top: 20px;
+            color: #888;
+            font-size: 14px;
         }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 <div class="container">
-    <div class="header">
-        <div><span class="online-dot"></span> <span id="statusText">Online</span></div>
-        <div><i class="fas fa-users"></i> <span id="onlineCount">0</span></div>
+    <div class="logo">
+        <i class="fas fa-comment-dots"></i>
     </div>
+    <h1>TokWithMe</h1>
+    <p style="color: #888; margin: 10px 0;">Real-time random chat</p>
     
-    <div class="main">
-        <div class="screen random-screen" id="randomScreen">
-            <div class="logo"><i class="fas fa-comment-dots"></i></div>
-            <h2>TokWithMe</h2>
-            <p style="color: #888; margin: 10px 0;">Random anonymous chat<br>No data saved</p>
-            <button id="findBtn"><i class="fas fa-random"></i> Find Partner</button>
-            <div id="finding" style="display: none;"><div class="spinner"></div><p>Finding someone...</p></div>
-        </div>
-        
-        <div class="screen chat-screen" id="chatScreen">
-            <div style="padding: 15px; background: #1a1a1a;">
-                <span id="partnerName">Stranger</span>
-                <span id="typingIndicator" style="float: right; font-size: 12px; color: #25F4EE;"></span>
-            </div>
-            <div class="messages" id="messages"></div>
-            <div class="input-area">
-                <div class="input-wrapper">
-                    <input type="text" id="messageInput" placeholder="Type a message...">
-                    <button id="sendBtn" style="width: 50px; padding: 0;"><i class="fas fa-paper-plane"></i></button>
-                </div>
-                <button id="disconnectBtn" style="margin-top: 10px; width: 100%; background: transparent; border: 1px solid #FE2C55;"><i class="fas fa-ban"></i> Disconnect</button>
-            </div>
-        </div>
-        
-        <div class="screen users-screen" id="usersScreen">
-            <div class="users-grid" id="usersGrid"></div>
-        </div>
-    </div>
-    
-    <div class="bottom-nav">
-        <div class="nav-item active" data-tab="random"><i class="fas fa-random"></i><br><small>Random</small></div>
-        <div class="nav-item" data-tab="users"><i class="fas fa-users"></i><br><small>Online</small></div>
-    </div>
-</div>
-
-<div class="modal" id="nameModal">
-    <div class="modal-content">
-        <i class="fas fa-smile" style="font-size: 48px; color: #FE2C55;"></i>
-        <h3 style="margin: 15px 0;">Enter nickname</h3>
-        <input type="text" id="nickname" placeholder="Your name" style="width: 100%; margin: 10px 0; border-radius: 10px;">
-        <button id="startBtn">Start</button>
-    </div>
+    <input type="text" id="nickname" placeholder="Enter nickname" maxlength="20">
+    <br>
+    <button onclick="startChat()">Start Chatting</button>
+    <div class="status" id="status">Enter a nickname to begin</div>
 </div>
 
 <script>
-// Use wss:// for Render, ws:// for local
-const WS_URL = `wss://${window.location.host}`;
-
-let ws = null;
-let myId = null;
-let myName = null;
-let currentPartner = null;
-
-function generateId() { return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6); }
-
-function connect() {
-    ws = new WebSocket(WS_URL);
+    let ws = null;
+    let myId = null;
+    let myName = null;
     
-    ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'register', userId: myId, name: myName }));
-        document.getElementById('statusText').innerText = 'Online';
-    };
+    function generateId() {
+        return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    }
     
-    ws.onmessage = (e) => {
-        const data = JSON.parse(e.data);
+    function startChat() {
+        myName = document.getElementById('nickname').value.trim();
+        if (!myName) {
+            alert('Please enter a nickname');
+            return;
+        }
         
-        if (data.type === 'user_list') {
-            document.getElementById('onlineCount').innerText = data.users.length;
-            document.getElementById('usersGrid').innerHTML = data.users.map(u => `
-                <div class="user-card" onclick="chatWith('${u.id}', '${u.name.replace(/'/g, "\\'")}')">
-                    <i class="fas fa-user-circle" style="font-size: 40px;"></i>
-                    <div>${u.name}</div>
-                    <small style="color: #4ade80;">● Online</small>
-                </div>
-            `).join('');
-        }
-        else if (data.type === 'pair') {
-            currentPartner = data.partnerId;
-            document.getElementById('partnerName').innerHTML = data.partnerName;
-            document.getElementById('randomScreen').style.display = 'none';
-            document.getElementById('chatScreen').style.display = 'flex';
-            document.getElementById('finding').style.display = 'none';
-            document.getElementById('messages').innerHTML = '';
-            showToast(`Connected with ${data.partnerName}!`);
-        }
-        else if (data.type === 'message' && data.from === currentPartner) {
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'message received';
-            msgDiv.innerHTML = `${escapeHtml(data.message)}<div style="font-size: 10px; opacity: 0.7;">${new Date(data.timestamp).toLocaleTimeString()}</div>`;
-            document.getElementById('messages').appendChild(msgDiv);
-            msgDiv.scrollIntoView();
-        }
-        else if (data.type === 'typing') {
-            document.getElementById('typingIndicator').innerHTML = data.isTyping ? '<i class="fas fa-pencil-alt"></i> Typing...' : '';
-        }
-        else if (data.type === 'partner_disconnected') {
-            showToast('Partner disconnected');
-            setTimeout(() => location.reload(), 1500);
-        }
-        else if (data.type === 'error') {
-            showToast(data.message);
-            document.getElementById('finding').style.display = 'none';
-        }
-    };
-    
-    ws.onclose = () => {
-        document.getElementById('statusText').innerText = 'Offline';
-        showToast('Reconnecting...');
-        setTimeout(connect, 3000);
-    };
-    
-    ws.onerror = () => {
-        showToast('Connection error');
-    };
-}
-
-function showToast(msg) {
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
-        background: rgba(0,0,0,0.9); color: white; padding: 10px 20px;
-        border-radius: 30px; z-index: 2000; animation: fadeIn 0.3s;
-    `;
-    toast.innerHTML = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2000);
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function findPartner() {
-    document.getElementById('finding').style.display = 'block';
-    ws.send(JSON.stringify({ type: 'find_partner', userId: myId }));
-}
-
-function sendMessage() {
-    const input = document.getElementById('messageInput');
-    const msg = input.value.trim();
-    if (!msg || !currentPartner) return;
-    
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message sent';
-    msgDiv.innerHTML = `${escapeHtml(msg)}<div style="font-size: 10px; opacity: 0.7;">Just now</div>`;
-    document.getElementById('messages').appendChild(msgDiv);
-    msgDiv.scrollIntoView();
-    
-    ws.send(JSON.stringify({ 
-        type: 'message', 
-        to: currentPartner, 
-        from: myId, 
-        message: msg, 
-        timestamp: Date.now() 
-    }));
-    input.value = '';
-}
-
-function chatWith(userId, userName) {
-    ws.send(JSON.stringify({ 
-        type: 'initiate_chat', 
-        fromId: myId, 
-        fromName: myName, 
-        toId: userId, 
-        toName: userName 
-    }));
-    document.getElementById('finding').style.display = 'block';
-}
-
-let typingTimeout;
-function onTyping() {
-    if (!currentPartner) return;
-    ws.send(JSON.stringify({ type: 'typing', to: currentPartner, from: myId, isTyping: true }));
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-        ws.send(JSON.stringify({ type: 'typing', to: currentPartner, from: myId, isTyping: false }));
-    }, 1000);
-}
-
-// Initialize app
-document.getElementById('startBtn').onclick = () => {
-    myName = document.getElementById('nickname').value.trim() || 'User_' + Math.floor(Math.random() * 1000);
-    myId = generateId();
-    document.getElementById('nameModal').style.display = 'none';
-    connect();
-    
-    document.getElementById('findBtn').onclick = findPartner;
-    document.getElementById('sendBtn').onclick = sendMessage;
-    document.getElementById('disconnectBtn').onclick = () => location.reload();
-    document.getElementById('messageInput').oninput = onTyping;
-    document.getElementById('messageInput').onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
-    
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.onclick = () => {
-            document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
-            const screenId = item.dataset.tab === 'random' ? 'randomScreen' : 'usersScreen';
-            document.getElementById(screenId).style.display = 'flex';
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            item.classList.add('active');
-            if (item.dataset.tab === 'users') {
-                ws.send(JSON.stringify({ type: 'get_users', userId: myId }));
+        myId = generateId();
+        document.getElementById('status').innerHTML = 'Connecting...';
+        
+        ws = new WebSocket(`wss://${window.location.host}`);
+        
+        ws.onopen = () => {
+            document.getElementById('status').innerHTML = 'Connected! Finding partner...';
+            ws.send(JSON.stringify({ type: 'register', userId: myId, name: myName }));
+            ws.send(JSON.stringify({ type: 'find_partner', userId: myId }));
+        };
+        
+        ws.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            console.log('Received:', data);
+            
+            if (data.type === 'pair') {
+                document.getElementById('status').innerHTML = `Connected with ${data.partnerName}! You can now chat.`;
+                alert(`Connected with ${data.partnerName}!`);
+            } else if (data.type === 'user_list') {
+                console.log('Online users:', data.users.length);
             }
         };
-    });
-};
-
-document.getElementById('nickname').onkeypress = (e) => {
-    if (e.key === 'Enter') document.getElementById('startBtn').click();
-};
+        
+        ws.onerror = () => {
+            document.getElementById('status').innerHTML = 'Connection error. Retrying...';
+            setTimeout(() => startChat(), 3000);
+        };
+        
+        ws.onclose = () => {
+            document.getElementById('status').innerHTML = 'Disconnected. Reconnecting...';
+            setTimeout(() => startChat(), 3000);
+        };
+    }
 </script>
 </body>
 </html>
