@@ -1,0 +1,170 @@
+const WebSocket = require('ws');
+const server = new WebSocket.Server({ port: process.env.PORT || 8080 });
+
+let users = new Map(); // In-memory only - no data saved!
+let waitingUsers = [];
+
+server.on('connection', (ws) => {
+    let userId = null;
+    let userName = null;
+    let currentPartner = null;
+    
+    ws.on('message', (data) => {
+        try {
+            const msg = JSON.parse(data);
+            
+            switch(msg.type) {
+                case 'register':
+                    userId = msg.userId;
+                    userName = msg.name;
+                    users.set(userId, { ws, name: userName, online: true });
+                    broadcastUserList();
+                    break;
+                    
+                case 'find_partner':
+                    if (waitingUsers.length > 0) {
+                        // Pair with waiting user
+                        const partnerId = waitingUsers.shift();
+                        const partner = users.get(partnerId);
+                        
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            currentPartner = partnerId;
+                            users.get(userId).partner = partnerId;
+                            users.get(partnerId).partner = userId;
+                            
+                            ws.send(JSON.stringify({
+                                type: 'pair',
+                                partnerId: partnerId,
+                                partnerName: partner.name
+                            }));
+                            
+                            partner.ws.send(JSON.stringify({
+                                type: 'pair',
+                                partnerId: userId,
+                                partnerName: userName
+                            }));
+                        }
+                    } else {
+                        waitingUsers.push(userId);
+                        ws.send(JSON.stringify({ type: 'waiting' }));
+                    }
+                    break;
+                    
+                case 'initiate_chat':
+                    const target = users.get(msg.toId);
+                    if (target && target.ws.readyState === WebSocket.OPEN && !target.partner) {
+                        currentPartner = msg.toId;
+                        target.partner = userId;
+                        users.get(userId).partner = msg.toId;
+                        
+                        ws.send(JSON.stringify({
+                            type: 'pair',
+                            partnerId: msg.toId,
+                            partnerName: msg.toName
+                        }));
+                        
+                        target.ws.send(JSON.stringify({
+                            type: 'pair',
+                            partnerId: userId,
+                            partnerName: msg.fromName
+                        }));
+                    } else {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'User is not available'
+                        }));
+                    }
+                    break;
+                    
+                case 'message':
+                    if (currentPartner) {
+                        const partner = users.get(currentPartner);
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            partner.ws.send(JSON.stringify({
+                                type: 'message',
+                                from: userId,
+                                messageId: msg.messageId,
+                                message: msg.message,
+                                timestamp: msg.timestamp
+                            }));
+                        }
+                    }
+                    break;
+                    
+                case 'typing':
+                    if (currentPartner) {
+                        const partner = users.get(currentPartner);
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            partner.ws.send(JSON.stringify({
+                                type: 'typing',
+                                from: userId,
+                                isTyping: msg.isTyping
+                            }));
+                        }
+                    }
+                    break;
+                    
+                case 'disconnect':
+                    if (currentPartner) {
+                        const partner = users.get(currentPartner);
+                        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                            partner.ws.send(JSON.stringify({
+                                type: 'partner_disconnected',
+                                partnerId: userId
+                            }));
+                            partner.partner = null;
+                        }
+                        currentPartner = null;
+                    }
+                    break;
+                    
+                case 'get_users':
+                    broadcastUserList();
+                    break;
+            }
+        } catch(e) {
+            console.error('Error processing message:', e);
+        }
+    });
+    
+    ws.on('close', () => {
+        if (userId) {
+            // Remove from waiting list
+            const index = waitingUsers.indexOf(userId);
+            if (index !== -1) waitingUsers.splice(index, 1);
+            
+            // Notify partner
+            if (currentPartner) {
+                const partner = users.get(currentPartner);
+                if (partner && partner.ws.readyState === WebSocket.OPEN) {
+                    partner.ws.send(JSON.stringify({
+                        type: 'partner_disconnected',
+                        partnerId: userId
+                    }));
+                    partner.partner = null;
+                }
+            }
+            
+            users.delete(userId);
+            broadcastUserList();
+        }
+    });
+});
+
+function broadcastUserList() {
+    const userList = Array.from(users.entries()).map(([id, user]) => ({
+        id: id,
+        name: user.name
+    }));
+    
+    users.forEach((user) => {
+        if (user.ws.readyState === WebSocket.OPEN) {
+            user.ws.send(JSON.stringify({
+                type: 'user_list',
+                users: userList
+            }));
+        }
+    });
+}
+
+console.log('WebSocket server running on port', process.env.PORT || 8080);
