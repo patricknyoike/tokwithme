@@ -1,40 +1,60 @@
 <?php
-echo "TokWithMe Server Starting...\n";
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
 
-// Simple WebSocket server using built-in PHP sockets
-$host = '0.0.0.0';
-$port = getenv('PORT') ?: 8080;
+// Log startup
+error_log("TokWithMe Server Starting...");
 
-$server = stream_socket_server("tcp://$host:$port", $errno, $errstr);
-if (!$server) {
-    die("Error: $errstr ($errno)\n");
+// Get port from Render environment (VERY IMPORTANT!)
+$port = getenv('PORT');
+if (!$port) {
+    $port = 8080; // Fallback port
 }
 
-echo "✅ WebSocket server running on ws://$host:$port\n";
+$host = '0.0.0.0';
+
+error_log("Attempting to bind to $host:$port");
+
+// Create server socket
+$server = @stream_socket_server("tcp://$host:$port", $errno, $errstr);
+
+if (!$server) {
+    error_log("ERROR: Failed to create socket: $errstr ($errno)");
+    exit(1);
+}
+
+error_log("✅ WebSocket server running on ws://$host:$port");
 
 $clients = [];
 $users = [];
 $waitingUsers = [];
 $partners = [];
 
+// Set socket to non-blocking
+stream_set_blocking($server, false);
+
+// Main loop
 while (true) {
     $read = array_merge([$server], $clients);
     $write = null;
     $except = null;
     
-    if (stream_select($read, $write, $except, 0, 50000)) {
+    if (stream_select($read, $write, $except, 0, 50000) > 0) {
+        // New connection
         if (in_array($server, $read)) {
-            $client = stream_socket_accept($server);
-            if ($client) {
+            if ($client = @stream_socket_accept($server, 0)) {
                 $clients[] = $client;
                 performHandshake($client);
-                echo "New client connected\n";
+                error_log("New client connected. Total clients: " . count($clients));
             }
             unset($read[array_search($server, $read)]);
         }
         
+        // Handle client messages
         foreach ($read as $client) {
-            $data = fread($client, 1024);
+            $data = @fread($client, 1024);
             if ($data === false || $data === '') {
                 // Client disconnected
                 $index = array_search($client, $clients);
@@ -43,7 +63,6 @@ while (true) {
                     $userId = array_search($client, $users);
                     if ($userId) {
                         unset($users[$userId]);
-                        // Notify partner
                         if (isset($partners[$userId])) {
                             $partnerId = $partners[$userId];
                             if (isset($users[$partnerId])) {
@@ -55,14 +74,13 @@ while (true) {
                             unset($partners[$partnerId]);
                             unset($partners[$userId]);
                         }
-                        // Remove from waiting list
                         $index = array_search($userId, $waitingUsers);
                         if ($index !== false) unset($waitingUsers[$index]);
                         broadcastUserList($clients, $users);
                     }
-                    echo "Client disconnected\n";
+                    error_log("Client disconnected. Total clients: " . count($clients));
                 }
-                fclose($client);
+                @fclose($client);
                 continue;
             }
             
@@ -70,21 +88,29 @@ while (true) {
             handleMessage($client, $message, $users, $waitingUsers, $partners, $clients);
         }
     }
+    
+    // Small sleep to prevent CPU hogging
+    usleep(10000);
 }
 
 function performHandshake($client) {
-    $headers = fread($client, 1024);
-    preg_match('/Sec-WebSocket-Key: (.*?)\r\n/', $headers, $match);
-    $key = $match[1];
-    $accept = base64_encode(sha1($key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
-    $upgrade = "HTTP/1.1 101 Switching Protocols\r\n" .
-               "Upgrade: websocket\r\n" .
-               "Connection: Upgrade\r\n" .
-               "Sec-WebSocket-Accept: $accept\r\n\r\n";
-    fwrite($client, $upgrade);
+    $headers = @fread($client, 1024);
+    if (preg_match('/Sec-WebSocket-Key: (.*?)\r\n/', $headers, $match)) {
+        $key = $match[1];
+        $accept = base64_encode(sha1($key . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11', true));
+        $upgrade = "HTTP/1.1 101 Switching Protocols\r\n" .
+                   "Upgrade: websocket\r\n" .
+                   "Connection: Upgrade\r\n" .
+                   "Sec-WebSocket-Accept: $accept\r\n\r\n";
+        @fwrite($client, $upgrade);
+        return true;
+    }
+    return false;
 }
 
 function unmask($data) {
+    if (strlen($data) < 2) return '';
+    
     $length = ord($data[1]) & 127;
     if ($length == 126) {
         $masks = substr($data, 4, 4);
@@ -96,6 +122,7 @@ function unmask($data) {
         $masks = substr($data, 2, 4);
         $data = substr($data, 6);
     }
+    
     $text = '';
     for ($i = 0; $i < strlen($data); ++$i) {
         $text .= $data[$i] ^ $masks[$i % 4];
@@ -124,21 +151,19 @@ function handleMessage($client, $message, &$users, &$waitingUsers, &$partners, $
     $data = json_decode($message, true);
     if (!$data) return;
     
-    $userId = array_search($client, $users);
-    
     switch($data['type']) {
         case 'register':
             $userId = $data['userId'];
             $users[$userId] = $client;
             broadcastUserList($clients, $users);
+            error_log("User registered: $userId");
             break;
             
         case 'find_partner':
             $userId = $data['userId'];
             if (count($waitingUsers) > 0) {
                 $partnerId = array_shift($waitingUsers);
-                $partner = $users[$partnerId] ?? null;
-                if ($partner) {
+                if (isset($users[$partnerId])) {
                     $partners[$userId] = $partnerId;
                     $partners[$partnerId] = $userId;
                     
@@ -147,21 +172,22 @@ function handleMessage($client, $message, &$users, &$waitingUsers, &$partners, $
                         'partnerId' => $partnerId,
                         'partnerName' => 'Stranger'
                     ]));
-                    sendMessage($partner, json_encode([
+                    sendMessage($users[$partnerId], json_encode([
                         'type' => 'pair',
                         'partnerId' => $userId,
                         'partnerName' => 'Stranger'
                     ]));
+                    error_log("Users paired: $userId with $partnerId");
                 }
             } else {
                 $waitingUsers[] = $userId;
+                error_log("User waiting: $userId");
             }
             break;
             
         case 'message':
             $toId = $data['to'];
-            $partnerId = $partners[$toId] ?? null;
-            if ($partnerId && isset($users[$toId])) {
+            if (isset($partners[$toId]) && isset($users[$toId])) {
                 sendMessage($users[$toId], json_encode([
                     'type' => 'message',
                     'from' => $data['from'],
